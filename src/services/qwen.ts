@@ -14,7 +14,9 @@ import {
   weightedAverageDso,
 } from "@/domain/engine";
 
-const TIMEOUT_MS = 25_000;
+// Cold-start latency for the deployed function can exceed 25s, so the client
+// timeout must be generous or live answers get aborted and the app falls back.
+const TIMEOUT_MS = 60_000;
 
 export interface QwenContext {
   question: string;

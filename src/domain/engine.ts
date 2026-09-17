@@ -686,7 +686,8 @@ export function askFinancialQuestion(
       `Right-sizing stock to 45 days and deferring PO-1184 until the Aster settlement clears removes roughly half of the projected shortfall.`;
   } else {
     answer =
-      `This question does not map to a recognised pattern in the seeded ledger (liquidity, receivables, vendor pricing, duplicates, subscriptions, inventory or health), so I will not guess. ` +
+      `I'm answering in Demo Intelligence Mode — the live Qwen analyst is unreachable right now, so this is generated deterministically from the seeded ledger. ` +
+      `This question doesn't map to one of the ledger's tracked patterns (liquidity, receivables, vendor pricing, duplicates, subscriptions, inventory or health), so I won't guess. ` +
       `What the data does support: cash stands at ${fmt(state.currentCash)}, the 90-day projection is ${fmt(base.day90Balance)}, recoverable leakage is ${fmt(totalLeakage(state))}, and ${state.risks.length} risks are being tracked. ` +
       `Refine the question toward one of those areas for a precise, evidence-cited answer.`;
   }

@@ -89,7 +89,9 @@ export function Analyst() {
             </div>
           </div>
 
-          {ask.isPending && <LoadingState label="Reasoning over the ledger…" />}
+          {ask.isPending && (
+            <LoadingState label="Asking Qwen — first call can take up to a minute while the analyst warms up…" />
+          )}
 
           {!ask.isPending && latest && (
             <div className="rounded-[4px] border border-border bg-card p-4">
