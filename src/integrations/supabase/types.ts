@@ -3360,7 +3360,72 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      finsight_audit_events: {
+        Row: {
+          created_at: string
+          data: Json
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          data: Json
+          id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          id?: string
+        }
+        Relationships: []
+      }
+      finsight_leaks: {
+        Row: {
+          data: Json
+          id: string
+          status: string
+          updated_at: string
+          workflow_id: string | null
+        }
+        Insert: {
+          data: Json
+          id: string
+          status?: string
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Update: {
+          data?: Json
+          id?: string
+          status?: string
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Relationships: []
+      }
+      finsight_workflows: {
+        Row: {
+          created_at: string
+          data: Json
+          id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data: Json
+          id: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

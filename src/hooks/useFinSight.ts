@@ -6,6 +6,7 @@ import type {
   Workflow,
 } from "@/domain/types";
 import { backend } from "@/services/data";
+import { enterpro } from "@/services/enterpro";
 
 const stateKey = ["finsight", "state"] as const;
 
@@ -45,27 +46,43 @@ export function useExecuteWorkflow() {
   });
 }
 
-export function useCreateWorkflowFromLeak() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (leakId: string) => backend.createWorkflowFromLeak(leakId),
-    onSuccess: (s: FinSightState) => qc.setQueryData(stateKey, s),
-  });
-}
-
-export function useCreateWorkflowFromRisk() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (riskId: string) => backend.createWorkflowFromRisk(riskId),
-    onSuccess: (s: FinSightState) => qc.setQueryData(stateKey, s),
-  });
-}
-
 export function useAcknowledgeRisk() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (riskId: string) => backend.acknowledgeRisk(riskId),
     onSuccess: (s: FinSightState) => qc.setQueryData(stateKey, s),
+  });
+}
+
+/**
+ * EnterPro orchestration — the app asks EnterPro to turn a flagged risk or
+ * leak into a tracked workflow. The stateful mock persists the workflow and
+ * its audit trail; swapping in a live HTTP client later changes nothing here.
+ */
+export function useEnterproCreateWorkflowFromRisk() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ riskId, type }: { riskId: string; type: Workflow["type"] }) => {
+      switch (type) {
+        case "vendor-review":
+          return enterpro.createVendorReview(riskId);
+        case "hold-payment":
+          return enterpro.holdPayment(riskId);
+        case "finance-task":
+          return enterpro.assignFinanceTask(riskId);
+        default:
+          return enterpro.createInvestigation(riskId);
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: stateKey }),
+  });
+}
+
+export function useEnterproRecoverLeak() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (leakId: string) => enterpro.recoverLeak(leakId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: stateKey }),
   });
 }
 

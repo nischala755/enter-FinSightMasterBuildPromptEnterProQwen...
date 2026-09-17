@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ShieldAlert, ArrowUpRight, CalendarClock, CircleDollarSign } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { PageHeader, MetricCard, RiskLevelBadge, SourceTag, SectionLabel } from "@/components/primitives";
 import { HealthPanel } from "@/components/HealthGauge";
 import { useFinSightState } from "@/hooks/useFinSight";
+import { askQwen, buildQwenContext } from "@/services/qwen";
 import {
   computeAtRiskCapital,
   computeFinancialHealth,
@@ -61,6 +62,23 @@ function HealthExplainSheet({ open, onOpenChange, components, score }: { open: b
 export function Overview() {
   const { data: state } = useFinSightState();
   const [explainOpen, setExplainOpen] = useState(false);
+  const [liveBriefing, setLiveBriefing] = useState<{ text: string } | null>(null);
+
+  // Qwen-generated briefing when live; deterministic template otherwise.
+  useEffect(() => {
+    let cancelled = false;
+    if (state) {
+      const ctx = buildQwenContext(state, "One-paragraph CFO briefing");
+      ctx.question =
+        "Write one plain-language paragraph briefing the CFO of Northstar Commerce. Cover: current cash, the 90-day outlook, the minimum-safe breach, the primary drivers, and the single most important recommended action. Use only the numbers and evidence provided — do not invent figures.";
+      askQwen(ctx).then((r) => {
+        if (r && !cancelled) setLiveBriefing({ text: r.answer });
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [state]);
 
   const view = useMemo(() => {
     if (!state) return null;
@@ -110,16 +128,16 @@ export function Overview() {
 
         {/* AI briefing */}
         <div className="flex flex-col rounded-[4px] border border-panel-border bg-panel p-5 text-panel-foreground">
-          <div className="flex items-center justify-between">
-            <SectionLabel className="text-panel-foreground/45">AI financial briefing</SectionLabel>
-            <div className="flex items-center gap-2">
-              <SourceTag kind="AI-recommendation" />
-              <span className="rounded-[3px] border border-panel-border px-1.5 py-[1px] text-[10px] text-panel-foreground/50">
-                {state.aiMode === "live" ? "Qwen · live" : "Demo intelligence mode"}
-              </span>
+            <div className="flex items-center justify-between">
+              <SectionLabel className="text-panel-foreground/45">AI financial briefing</SectionLabel>
+              <div className="flex items-center gap-2">
+                <SourceTag kind="AI-recommendation" />
+                <span className={cn("rounded-[3px] border px-1.5 py-[1px] text-[10px]", liveBriefing ? "border-positive/40 bg-positive/10 text-positive" : "border-panel-border text-panel-foreground/50")}>
+                  {liveBriefing ? "Qwen · live" : "Demo intelligence mode"}
+                </span>
+              </div>
             </div>
-          </div>
-          <p className="mt-4 flex-1 text-[14px] leading-relaxed text-panel-foreground/85">{view.briefing}</p>
+          <p className="mt-4 flex-1 text-[14px] leading-relaxed text-panel-foreground/85">{liveBriefing?.text ?? view.briefing}</p>
 
           <div className="mt-4 grid grid-cols-2 gap-3 border-t border-panel-border pt-4 sm:grid-cols-4">
             <BriefStat label="Expected inflows (90d)" value={inrCompact(view.base.series.filter((p) => p.inflow > 0).reduce((s, p) => s + p.inflow, 0))} />

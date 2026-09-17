@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Recycle, Lock } from "lucide-react";
 import { PageHeader, MetricCard, ConfidenceBar, EvidenceList, SourceTag, EmptyState } from "@/components/primitives";
-import { useCreateWorkflowFromLeak, useFinSightState } from "@/hooks/useFinSight";
+import { useEnterproRecoverLeak, useFinSightState } from "@/hooks/useFinSight";
 import { leakageByCategory, totalLeakage } from "@/domain/engine";
 import { inrCompact, inrFull } from "@/domain/format";
 import type { LeakCategory } from "@/domain/types";
@@ -20,7 +20,7 @@ const CATEGORY_META: Record<LeakCategory, { label: string; tone: string }> = {
 
 export function MoneyLeaks() {
   const { data: state } = useFinSightState();
-  const recover = useCreateWorkflowFromLeak();
+  const recover = useEnterproRecoverLeak();
   const [openId, setOpenId] = useState<string | null>(null);
   const { intent } = useDemoIntent();
 

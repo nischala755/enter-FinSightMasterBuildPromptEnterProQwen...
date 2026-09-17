@@ -1,0 +1,3 @@
+delete from finsight_workflows;
+delete from finsight_audit_events;
+delete from finsight_leaks;

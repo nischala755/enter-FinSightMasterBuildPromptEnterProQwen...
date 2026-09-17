@@ -4,7 +4,7 @@ import { PageHeader, StatusBadge, EvidenceList, EmptyState, SourceTag } from "@/
 import {
   useAdvanceWorkflow,
   useApproveWorkflow,
-  useCreateWorkflowFromRisk,
+  useEnterproCreateWorkflowFromRisk,
   useExecuteWorkflow,
   useFinSightState,
 } from "@/hooks/useFinSight";
@@ -32,7 +32,7 @@ export function Workflows() {
   const advance = useAdvanceWorkflow();
   const approve = useApproveWorkflow();
   const execute = useExecuteWorkflow();
-  const createFromRisk = useCreateWorkflowFromRisk();
+  const createFromRisk = useEnterproCreateWorkflowFromRisk();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const { intent } = useDemoIntent();
@@ -42,9 +42,10 @@ export function Workflows() {
   // Demo intent: create an EnterPro workflow from the flagged risk (hold PO-1184)
   useEffect(() => {
     if (intent.type === "create-workflow" && intent.riskId) {
-      createFromRisk.mutate(intent.riskId, {
-        onSuccess: () => toast.success(`EnterPro workflow created for ${intent.riskId} — status Detected`),
-      });
+      createFromRisk.mutate(
+        { riskId: intent.riskId, type: "hold-payment" },
+        { onSuccess: () => toast.success(`EnterPro workflow created for ${intent.riskId} — status Detected`) },
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intent.ref]);

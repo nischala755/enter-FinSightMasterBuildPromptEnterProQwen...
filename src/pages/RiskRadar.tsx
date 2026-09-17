@@ -5,7 +5,7 @@ import { PageHeader, RiskLevelBadge, ConfidenceBar, EmptyState } from "@/compone
 import { RiskDetailSheet } from "@/components/RiskDetailSheet";
 import {
   useAcknowledgeRisk,
-  useCreateWorkflowFromRisk,
+  useEnterproCreateWorkflowFromRisk,
   useFinSightState,
   useRecordRiskTrace,
 } from "@/hooks/useFinSight";
@@ -37,7 +37,7 @@ export function RiskRadar() {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const ack = useAcknowledgeRisk();
-  const create = useCreateWorkflowFromRisk();
+  const create = useEnterproCreateWorkflowFromRisk();
   const trace = useRecordRiskTrace();
   const { intent } = useDemoIntent();
 
@@ -170,8 +170,16 @@ export function RiskRadar() {
         }}
         onCreateWorkflow={() => {
           if (selected) {
-            create.mutate(selected.id);
-            toast.success(`EnterPro workflow created for ${selected.id}`);
+            const type =
+              selected.category === "vendor"
+                ? "vendor-review"
+                : selected.category === "liquidity" || selected.category === "inventory"
+                  ? "hold-payment"
+                  : selected.category === "subscription"
+                    ? "finance-task"
+                    : "investigation";
+            create.mutate({ riskId: selected.id, type });
+            toast.success(`EnterPro ${type.replace("-", " ")} workflow created for ${selected.id}`);
           }
         }}
       />

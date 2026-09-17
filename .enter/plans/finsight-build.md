@@ -1,5 +1,9 @@
 # FinSight — Build Plan (Enter Cloud + Qwen Edition)
 
+## Build status — DONE (2026-09-17)
+
+All phases completed: design system, 10 interactive screens, calibrated deterministic engine (health 78, cash ₹4.82 Cr, 90-day ₹2.17 Cr, exposure ₹64L, breach day 52, leakage ₹38.4L, at-risk ₹28.6L), Trace Cause + Simulator signature features, end-to-end approve→audit chain, Enter Cloud Postgres persistence (workflows/audit/leaks) with in-memory fallback, Qwen live via deployed `qwen-ask` (Qwen 3.6 Plus, OpenAI-compatible protocol, verified with a live call) with Demo Intelligence fallback, EnterPro stateful mock wired through the app, demo walkthrough, and 22 tests. Remaining: 7 non-blocking lint warnings (react-refresh/exhaustive-deps); analyst session history is in-memory; auth/roles out of scope.
+
 ## Context
 
 We are building **FinSight**, a fully working financial early-warning & intervention system for the fictional company **Northstar Commerce** (INR), on Enter. The revised master prompt (source of truth) defines 10 screens, two signature features (Trace Cause causal graph, Crisis Simulator), a deterministic engine, Qwen as reasoning layer, EnterPro as a **stateful mock** (no real credentials exist), and a Definition of Done: every number traceable to seed data or a deterministic calculation, no dead ends, no placeholders.

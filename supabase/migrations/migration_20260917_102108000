@@ -1,0 +1,38 @@
+create table if not exists finsight_workflows (
+  id text primary key,
+  data jsonb not null,
+  status text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists finsight_audit_events (
+  id text primary key,
+  data jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists finsight_leaks (
+  id text primary key,
+  status text not null default 'open',
+  workflow_id text,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table finsight_workflows enable row level security;
+alter table finsight_audit_events enable row level security;
+alter table finsight_leaks enable row level security;
+
+-- Public demo dataset (no auth in this demo): the fictional Northstar Commerce
+-- ledger is shared demo data, so policies scope to the whole dataset.
+create policy "finsight_workflows_select" on finsight_workflows for select using (true);
+create policy "finsight_workflows_insert" on finsight_workflows for insert with check (true);
+create policy "finsight_workflows_update" on finsight_workflows for update using (true);
+
+create policy "finsight_audit_select" on finsight_audit_events for select using (true);
+create policy "finsight_audit_insert" on finsight_audit_events for insert with check (true);
+
+create policy "finsight_leaks_select" on finsight_leaks for select using (true);
+create policy "finsight_leaks_insert" on finsight_leaks for insert with check (true);
+create policy "finsight_leaks_update" on finsight_leaks for update using (true);
