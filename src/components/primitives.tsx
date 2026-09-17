@@ -134,10 +134,11 @@ const EVIDENCE_TYPE_LABEL: Record<EvidenceRef["type"], string> = {
 };
 
 export function EvidenceList({ items, className }: { items: EvidenceRef[]; className?: string }) {
-  if (items.length === 0) return <span className="text-[11px] italic text-muted-foreground">No direct evidence linked</span>;
+  const list = items ?? [];
+  if (list.length === 0) return <span className="text-[11px] italic text-muted-foreground">No direct evidence linked</span>;
   return (
     <ul className={cn("space-y-1", className)}>
-      {items.map((e, i) => (
+      {list.map((e, i) => (
         <li key={`${e.type}-${e.id}-${i}`} className="flex items-baseline gap-2 text-[12px]">
           <span className="tnum inline-flex shrink-0 rounded-[3px] border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
             {EVIDENCE_TYPE_LABEL[e.type]}

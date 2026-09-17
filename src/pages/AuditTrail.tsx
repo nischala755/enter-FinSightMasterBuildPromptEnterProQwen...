@@ -90,7 +90,9 @@ export function AuditTrail() {
               </tr>
             </thead>
             <tbody>
-              {events.map((e) => (
+              {events.map((e) => {
+                const evidence = e.evidence ?? [];
+                return (
                 <tr key={e.id} className="border-b border-border/40 last:border-0 hover:bg-muted/20">
                   <td className="tnum whitespace-nowrap px-3 py-2 font-mono text-[11px] text-muted-foreground">{formatDateTime(e.at)}</td>
                   <td className="whitespace-nowrap px-3 py-2">
@@ -102,12 +104,12 @@ export function AuditTrail() {
                   </td>
                   <td className="max-w-[260px] px-3 py-2">
                     <div className="truncate text-muted-foreground">{e.reason ?? "—"}</div>
-                    {e.evidence.length > 0 && (
+                    {evidence.length > 0 && (
                       <div className="mt-0.5 flex flex-wrap gap-1">
-                        {e.evidence.slice(0, 3).map((ev) => (
+                        {evidence.slice(0, 3).map((ev) => (
                           <span key={ev.id} className="font-mono text-[10px] text-brand">{ev.id}</span>
                         ))}
-                        {e.evidence.length > 3 && <span className="text-[10px] text-muted-foreground">+{e.evidence.length - 3}</span>}
+                        {evidence.length > 3 && <span className="text-[10px] text-muted-foreground">+{evidence.length - 3}</span>}
                       </div>
                     )}
                   </td>
@@ -127,7 +129,8 @@ export function AuditTrail() {
                     {e.amount !== undefined && <span className="tnum block text-[11px] font-semibold">{inrCompact(e.amount)}</span>}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

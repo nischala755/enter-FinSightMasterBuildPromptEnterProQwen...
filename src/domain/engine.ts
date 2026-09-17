@@ -758,6 +758,7 @@ export function advanceWorkflow(wf: Workflow, at: string, actor: string): Workfl
 export function makeAuditEvent(e: Omit<AuditEvent, "id" | "at">): AuditEvent {
   return {
     ...e,
+    evidence: e.evidence ?? [],
     id: `EV-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
     at: new Date().toISOString(),
   };

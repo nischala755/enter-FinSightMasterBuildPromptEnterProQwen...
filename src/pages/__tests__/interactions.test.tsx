@@ -9,6 +9,7 @@ import { Workflows } from "@/pages/Workflows";
 import { Simulator } from "@/pages/Simulator";
 import { MoneyLeaks } from "@/pages/MoneyLeaks";
 import { RiskRadar } from "@/pages/RiskRadar";
+import { AuditTrail } from "@/pages/AuditTrail";
 
 function createQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
@@ -78,6 +79,24 @@ describe("key user interactions", () => {
       expect(leak.workflowId).toBeTruthy();
       expect(s.workflows.some((w) => w.sourceLeakId === "LK-01")).toBe(true);
     });
+  });
+
+  it("audit trail renders after evidence-less actions (regression for e.evidence crash)", async () => {
+    // Acknowledge/trace actions create audit events without an evidence field;
+    // the Audit Trail must render them without throwing.
+    await backend.acknowledgeRisk("R-01");
+    await backend.recordRiskTrace("R-02");
+    await backend.runSimulation({
+      revenueChangePct: -15,
+      receivablesDelayDays: 10,
+      vendorCostChangePct: 8,
+      discretionarySpendChangePct: 0,
+      inventorySpendChangePct: 25,
+    });
+    renderWithProviders(<AuditTrail />);
+    await waitFor(() => expect(screen.getAllByText("risk.acknowledged").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("risk.traced").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("simulation.run").length).toBeGreaterThan(0);
   });
 
   it("running a scenario shows deterministic outputs and an optimal intervention", async () => {

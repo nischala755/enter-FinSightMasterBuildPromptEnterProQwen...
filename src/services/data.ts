@@ -433,12 +433,18 @@ class CloudBackend extends InMemoryBackend {
 
   private hydrate(base: FinSightState, wfRows: WorkflowRow[], auditRows: AuditRow[], leakRows: LeakRow[]): FinSightState {
     const leakMap = new Map(leakRows.map((l) => [l.id, l]));
+    const normalize = <T extends { evidence?: FinSightState["auditEvents"][number]["evidence"] }>(obj: T): T => ({
+      ...obj,
+      evidence: Array.isArray(obj.evidence) ? obj.evidence : [],
+    });
     return {
       ...base,
       aiMode: this.mode,
-      workflows: wfRows.map((r) => r.data as unknown as Workflow).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+      workflows: wfRows
+        .map((r) => normalize(r.data as unknown as Workflow))
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
       auditEvents: auditRows
-        .map((r) => r.data as unknown as FinSightState["auditEvents"][number])
+        .map((r) => normalize(r.data as unknown as FinSightState["auditEvents"][number]))
         .sort((a, b) => (a.at < b.at ? 1 : -1)),
       leaks: base.leaks.map((l) => {
         const row = leakMap.get(l.id);
