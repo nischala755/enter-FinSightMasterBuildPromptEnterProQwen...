@@ -1,114 +1,144 @@
-# FinSight — Build Plan (Enter Cloud + Qwen Edition)
-
-## Build status — DONE (2026-09-17)
-
-All phases completed: design system, 10 interactive screens, calibrated deterministic engine (health 78, cash ₹4.82 Cr, 90-day ₹2.17 Cr, exposure ₹64L, breach day 52, leakage ₹38.4L, at-risk ₹28.6L), Trace Cause + Simulator signature features, end-to-end approve→audit chain, Enter Cloud Postgres persistence (workflows/audit/leaks) with in-memory fallback, Qwen live via deployed `qwen-ask` (Qwen 3.6 Plus, OpenAI-compatible protocol, verified with a live call) with Demo Intelligence fallback, EnterPro stateful mock wired through the app, demo walkthrough, and 22 tests. Remaining: 7 non-blocking lint warnings (react-refresh/exhaustive-deps); analyst session history is in-memory; auth/roles out of scope.
+# FinSight Hardening — Implementation Plan
 
 ## Context
 
-We are building **FinSight**, a fully working financial early-warning & intervention system for the fictional company **Northstar Commerce** (INR), on Enter. The revised master prompt (source of truth) defines 10 screens, two signature features (Trace Cause causal graph, Crisis Simulator), a deterministic engine, Qwen as reasoning layer, EnterPro as a **stateful mock** (no real credentials exist), and a Definition of Done: every number traceable to seed data or a deterministic calculation, no dead ends, no placeholders.
+FinSight today is a working demo with a trustworthy deterministic engine wrapped in a fragile shell. Four things verified against the live system drive this plan:
 
-**Platform architecture (already aligned with the revised spec):**
-- Frontend = React + Vite + Tailwind + TS. Backend = **Enter Cloud only**: managed Postgres for all persisted entities, Deno backend functions for anything server-side (Qwen call, seeding, any untrusted write). No Node/Express/Prisma.
-- **Authoritative store = Enter Cloud Postgres.** Workflows, approvals, audit events, transactions, vendors are real rows — refreshing the page or a second viewer sees real current status. No in-memory-only frontend store for these.
-- Build order per §11: frontend/domain first with seed data (behind a `DataAccess` interface), then wire Postgres, then Qwen + EnterPro, then polish, then demo trigger. In Phase 1 the `DataAccess` interface is backed by an in-memory adapter over the seed so every screen is interactive day one; Phase 4 swaps that adapter for Enter Cloud with zero component changes.
-- The demo walkthrough must run without any **external** service — Qwen has a deterministic fallback; EnterPro is a mock. Enter Cloud is platform infra (always reachable in preview), so Postgres-backed data is fine; DB fetch failures render proper error states with retry.
-- i18n plumbing stays untouched; FinSight UI is English-only.
-- Testing: template has no test runner → add **Vitest** + **@testing-library/react** (jsdom) for the approve-workflow chain and key interactions.
-- Design: light-first "financial terminal" — warm off-white canvas, charcoal text, near-black inset panels, restrained green/amber/red, one sparse accent. No purple/blue AI gradients, no glassmorphism, no robot icons. Inter + JetBrains Mono bundled locally via `@fontsource` (works offline). Tabular numerals for figures, mono for IDs/audit.
+1. **Reset is silently broken.** `supabase_get_table_schema` confirms there is **no DELETE policy** on any `finsight_*` table. RLS therefore blocks `resetDemo()`'s deletes, `tryCloud()` swallows the error, and the UI still reports "Demo data reset to seed state".
+2. **There is a live cloud-only bug.** `CloudBackend.runSimulation` returns a `FinSightState` where `{result, state}` is required. `useRunSimulation.onSuccess` destructures `state` → `undefined` → `qc.setQueryData(stateKey, undefined)` blanks the app state. Tests never catch it because `src/test/setup.ts` forces memory mode. Found by running `tsc --strict`.
+3. **The data is shared and real.** 7 workflows, 236 audit events, 6 leaks exist and must be preserved.
+4. **Cleanup is narrower than the review assumed.** `next-themes` is required by `ui/sonner.tsx`, `react-hook-form`/`zod` by `ui/form.tsx`, and i18n by `NotFound.tsx`. Only `framer-motion` is genuinely unused.
+
+Agreed direction: **anonymous-first ownership** — every visitor silently gets a real Enter Cloud identity, so the demo keeps working with no login wall, while every row gains a real owner and real RLS. Analytics and i18n get wired up rather than deleted. The `build` script stays untouched.
 
 ## Architecture
 
 ```
-src/
-  components/   AppShell, Sidebar, Header, MetricCard, HealthGauge, RiskCard,
-                CausalGraph, TraceCauseDrawer, ExplainabilityDrawer, ForecastChart,
-                ScenarioControls, WorkflowTimeline, AuditTable, EvidenceDrawer, …
-  pages/        Overview, RiskRadar, MoneyLeaks, CashForecast, Simulator,
-                Transactions, Vendors, Workflows, Analyst, AuditTrail
-  domain/       types.ts, format.ts, engine.ts (pure deterministic math, source of
-                numeric truth), seed.ts (embedded copy of seed dataset for tests/fallback)
-  services/     data.ts  (DataAccess interface + Postgres adapter via React Query)
-                qwen.ts  (calls qwen-ask backend function + deterministic fallback)
-                enterpro.ts (stateful mock behind one interface; persists to Postgres)
-  hooks/        useFinSight.ts (React Query hooks over DataAccess)
-  lib/          utils (cn)
+UI (pages)
+ → React Query hooks (hooks/useFinSight.ts)
+ → application service (services/finsightService.ts)   ← domain op runs ONCE here
+ → domain operations (domain/operations.ts)            ← pure, single source of rules
+ → persistence port (services/persistence/port.ts)
+     ├── cloud adapter (services/persistence/cloud.ts)   + Zod validation at the boundary
+     └── memory adapter (services/persistence/memory.ts)
 ```
 
-- **`domain/engine.ts`** — pure functions, the only source of numeric truth: `computeFinancialHealth` (with point-by-point breakdown), `forecastCash(caseType)` (90-day series vs min-safe ₹1.25 Cr + breach date), `scoreRisk`, `runScenario`, `findOptimalIntervention` (predefined strategy set), `detectLeaks` (categories), `detectDuplicateInvoices` (INV-48291), `detectVendorPriceCreep` (V-019), causal chains, `citeEvidence` (real invoice/vendor/PO IDs). Runs in the frontend; Qwen only reasons over numbers the engine hands it.
-- **Seed dataset (canonical, shared)** — a single JSON/TS source of Northstar data (invoices, payments, POs, vendors, receivables, cash history, risks, workflows, audit events) **calibrated by construction** so the engine reproduces: current cash ₹4.82 Cr, 90-day forecast ₹2.17 Cr, at-risk capital ₹28.4L, recoverable leakage ₹38.4L, health 78/100, liquidity exposure ≈₹64L, breach ≈52 days, min safe ₹1.25 Cr. Deliberate patterns: INV-48291 duplicate, V-019 price creep, Aster Retail aging, rising inventory spend, one cross-domain risk. Same dataset used by the seed backend function and the frontend adapter — one source, no drift. Never labeled "fake" in UI.
-- **`services/data.ts`** — typed interface: `getInvoices/getPayments/getPos/getVendors/getWorkflows/getAuditEvents/getCashHistory/getRisks/updateWorkflow/approveWorkflow/insertAuditEvent/createWorkflowFromLeak/…`. Components consume React Query hooks only; the Phase-4 swap to Postgres is invisible to them.
-- **`services/enterpro.ts`** — interface: `createApproval, holdPayment, createInvestigation, assignFinanceTask, notifyStakeholder, createVendorReview, createCollectionsTask`. Stateful mock: writes workflow + audit rows to Postgres through `data.ts` (or a backend function if the enter_cloud skill shows that's the safer pattern). Status `Detected → Investigating → Awaiting Approval → Approved → Executed` persisted. Swappable for a real HTTP client later with no changes outside this module.
+`InMemoryBackend`/`CloudBackend` stop being two implementations of the same rules. Each mutation becomes: load snapshot → run one pure domain operation → persist the returned fragments. Only persistence differs.
 
-## Backend design (Enter Cloud)
+### Ownership & security model
 
-- **Postgres schema** (created after loading the `enter_cloud` skill, per its migration/RLS conventions): `customers, vendors, invoices, payments, purchase_orders, expenses, subscriptions, receivables, cash_balances, risks, workflows, workflow_events, audit_events`. RLS: demo-appropriate anon access (auth/roles explicitly out of scope unless the core loop is solid first).
-- **Backend function `finsight-seed`** — idempotent upsert of the canonical Northstar dataset so a fresh environment and every visitor sees the same state.
-- **Backend function `qwen-ask`** — reads secrets `QWEN_API_KEY`/`QWEN_BASE_URL`/`QWEN_MODEL` (added via `supabase_add_secret`, never bundled to the browser); accepts a mode param (`askFinancialQuestion | explainRisk | investigateAnomaly | generateRecommendation | explainScenario`) plus the pre-computed evidence/metrics from the frontend; calls the OpenAI-compatible chat-completions endpoint; returns a structured answer (plain-language answer, metrics used, evidence citations, confidence, recommended actions, limitations); Zod validation in/out. If secrets are absent or the call fails → the frontend uses deterministic templated answers from `src/domain/` with a small "Demo Intelligence Mode" indicator.
+Anonymous auth gives every visitor a real `auth.uid()` with no login screen.
+
+- New nullable `user_id uuid` column on all three tables. The 236 legacy rows keep `user_id IS NULL`, are **never deleted**, and become invisible to the app — each visitor is seeded their own private copy instead. This is a deliberate, visible behavior change.
+- Surrogate `row_id uuid` primary key + `unique (user_id, id)`, because every user now holds their own `WF-1001`.
+- RLS replaced: SELECT/INSERT/UPDATE/DELETE all scoped to `user_id = auth.uid()`. Reset becomes deterministic and **structurally incapable** of touching the legacy seed.
+- **Server-side enforcement via Postgres triggers**, not a second copy of the engine: a stamp trigger forces `user_id = auth.uid()` on insert (so a client cannot forge ownership), and a transition trigger rejects illegal workflow status changes (so a client cannot jump `Detected → Executed` by calling PostgREST directly).
+
+Triggers are chosen over a mutation backend function deliberately: they enforce invariants in one place without duplicating domain logic into Deno, which would recreate the exact duplication problem this refactor removes.
+
+## Critical files
+
+| Path | Change |
+|---|---|
+| `src/domain/operations.ts` | **New** — all mutation rules, one place |
+| `src/domain/schemas.ts` | **New** — Zod schemas for persisted structures |
+| `src/domain/transitions.ts` | **New** — centralized workflow/leak state machine, explicit errors |
+| `src/services/persistence/{port,cloud,memory}.ts` | **New** — replaces the dual-backend `data.ts` |
+| `src/services/finsightService.ts` | **New** — orchestration; `services/data.ts` becomes a thin re-export |
+| `src/services/auth.ts` | **New** — anonymous session bootstrap, authoritative current user |
+| `src/services/qwen.ts`, `src/pages/Analyst.tsx`, `src/pages/Overview.tsx` | Explicit AI provenance |
+| `src/hooks/useFinSight.ts` | Point at the service; fix `runSimulation` contract |
+| `src/router.tsx` | `React.lazy` + `Suspense` route splitting |
+| `supabase/migrations/migration_20260917_102431000` | Neutralize the unconditional `DELETE` |
+| `tsconfig.app.json` | `strict`, `noImplicitAny`, unused checks |
+
+Reuse existing, do not reinvent: `domain/engine.ts` (untouched math), `domain/format.ts`, `components/primitives.tsx` (`SourceTag`, `EvidenceList`, `StatusBadge`), `components/ui/skeleton.tsx`.
 
 ## Implementation checklist
 
-- [ ] **Phase 0 — Scaffolding & design system**
-  - [ ] Add deps: `vitest`, `jsdom`, `@testing-library/react`, `@testing-library/user-event`, `@fontsource-variable/inter`, `@fontsource-variable/jetbrains-mono`.
-  - [ ] Load `frontend-design` skill; extend `src/index.css` + `tailwind.config.ts` with FinSight tokens (canvas/ink/near-black panels, semantic pos/neg/warn/danger, one accent, tabular-nums, mono fonts).
-  - [ ] Create folder structure; extend `src/router.tsx` with 10 routes (overview → `/`, risk-radar, money-leaks, cash-forecast, simulator, transactions, vendors, workflows, ai-analyst, audit-trail). Replace the template hero in `src/pages/Index.tsx` with AppShell + Overview.
-  - [ ] Implement `src/domain/{types,format,engine}.ts` + canonical seed dataset + `src/services/data.ts` with an in-memory seed-backed adapter + `src/hooks/useFinSight.ts` (React Query hooks).
-  - [ ] Build `AppShell`, `Sidebar` (fixed left nav, exactly the 10 items in order), `Header` (company, cash chip, Demo Intelligence Mode indicator, demo-walkthrough trigger).
-  - [ ] Add `vitest.config.ts` + `test` script; first engine tests (health = 78, breach ~52 days, leakage ≈ ₹38.4L).
-  - [ ] Green: `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm run build`.
+### Phase 0 — capabilities & data safety
+- [ ] Call `i18n_enable` and `enable_analytics` (both currently off; each owns its own workflow once enabled)
+- [ ] Enable anonymous users via `supabase_configure_auth`
+- [ ] Migration adds `user_id`, surrogate `row_id` PK, `unique (user_id, id)`, and a `user_id` index to all three tables **without deleting any row**
+- [ ] Migration replaces every `using (true)` policy with `user_id = auth.uid()` scoping, including a DELETE policy
+- [ ] Insert trigger stamps `user_id = auth.uid()`, overriding any client-supplied value
+- [ ] Update trigger rejects illegal workflow status transitions at the database level
+- [ ] Verify with `supabase_read_query` that legacy row counts are still 7 / 236 / 6 after migrating
+- [ ] Replace `migration_20260917_102431000` contents with a documented no-op so replay is non-destructive
+- [ ] `resetDemo` deletes only the caller's rows, re-seeds them, and **returns an explicit result** instead of a silent fallback
+- [ ] Reset toast reports success only when the reset actually happened; degraded/offline reports a distinct message
 
-- [ ] **Phase 1 — All 10 screens interactive from day one** (every button real, all loading/error/empty states)
-  - [ ] **Overview**: HealthGauge (78, explainable), current cash ₹4.82 Cr, 90-day forecast, at-risk capital, recoverable leakage, 3–5 Emerging Risk cards (level/impact/horizon), AI briefing (fallback first, clearly labeled AI-generated).
-  - [ ] **Risk Radar**: risk list with level/impact/probability/confidence/horizon/drivers/evidence/action; **Trace Cause** → animated causal graph highlighting nodes in sequence with real evidence links; explainability drawer with point-by-point score contribution.
-  - [ ] **Money Leaks**: total + category breakdown; each item expands (why detected, evidence, baseline comparison, confidence) with **"Recover this value"** → creates a real Workflow + audit event.
-  - [ ] **Cash Forecast**: hero chart = 30/60/90-day forecast vs min-safe ₹1.25 Cr with **projected breach date**; Base/Downside/Upside toggle; key drivers; "forecast is an estimate" disclaimer.
-  - [ ] **Simulator**: sliders (revenue change, receivables delay, vendor cost change, discretionary/inventory spend) → Baseline vs Scenario vs Scenario+Recommended-Intervention, **deterministic**; "Find optimal intervention" ranks the predefined strategy set by impact/risk/complexity.
-  - [ ] **Transactions**: seeded invoices/payments/POs (~50 rows), filter by type/status + search + expandable evidence links.
-  - [ ] **Vendors**: list with pricing-history sparkline, flags (price creep, bank-detail change), links back to risks/leaks.
-  - [ ] **Workflows**: full state machine `Detected → Investigating → Awaiting Approval → Approved → Executed`; **approve chain works end-to-end**: status → Approved, approver recorded, audit event created, UI updates immediately.
-  - [ ] **AI Analyst**: analyst-workstation layout (not chat bubbles); preset prompt chips populate + submit; answers include plain-language answer, metrics used, evidence citations (real IDs), confidence, recommended actions, limitations; says "insufficient evidence" rather than guessing.
-  - [ ] **Audit Trail**: every workflow/risk/approval action → one entry (timestamp, actor, action, reason, evidence, risk ID, workflow ID, approval state, outcome); filterable.
-  - [ ] Green: lint, tsc, tests, build.
+### Phase 1 — single source of domain rules
+- [ ] `domain/transitions.ts` centralizes workflow + leak transitions and returns typed errors for invalid moves
+- [ ] `domain/operations.ts` implements each mutation once: approve, advance, execute, createFromRisk, createFromLeak, createCollections, notify, acknowledgeRisk, recordRiskTrace, runSimulation, askAnalyst, reset
+- [ ] `services/persistence/port.ts` defines load/persist only — no business rules
+- [ ] Memory and cloud adapters implement the port; neither contains transition logic
+- [ ] `finsightService.ts` runs the domain op once and hands fragments to the active adapter
+- [ ] Invalid transitions surface as explicit errors in the UI, not silent no-ops
+- [ ] Fix `runSimulation` to return `{result, state}` on the cloud path
 
-- [ ] **Phase 2 — Financial model tightening**
-  - [ ] Every score/forecast explainable (point-by-point contribution drawer), deterministic, no guaranteed-forecast language; visual distinction Observed / Calculated / Forecast / AI-recommendation throughout.
-  - [ ] Engine tests: health calc, cash forecasting, risk scoring, scenario simulation, duplicate detection, vendor price detection, leakage totals, workflow transitions, audit creation, AI fallback mode.
+### Phase 2 — types & validation
+- [ ] `tsconfig.app.json`: `strict: true`, `noImplicitAny: true`, `noUnusedLocals/Parameters: true`
+- [ ] Resolve all 24 strict errors without adding `as unknown as` casts
+- [ ] `domain/schemas.ts` Zod schemas for `Workflow`, `Leak`, `AuditEvent`, `EvidenceRef`, `AnalystAnswer`
+- [ ] Cloud hydration `safeParse`s every row; malformed rows are skipped, counted, and surfaced explicitly rather than cast
 
-- [ ] **Phase 3 — Wire Enter Cloud Postgres** (load `enter_cloud` skill first)
-  - [ ] Define schema + RLS for all persisted entities; create tables via the skill's migration mechanism.
-  - [ ] Backend function `finsight-seed`: idempotent upsert of the canonical dataset (from the shared seed source).
-  - [ ] Replace the in-memory adapter in `services/data.ts` with the Postgres adapter (`@supabase/supabase-js`, already in deps); components unchanged; add DB error/loading/empty handling.
-  - [ ] Verify: refresh persistence, second-viewer consistency, seed idempotency.
+### Phase 3 — AI reliability
+- [ ] `AnalystAnswer` carries per-section provenance; narrative is the only Qwen-sourced field
+- [ ] `limitations` states plainly which parts were deterministic when Qwen answered
+- [ ] Confidence is labeled as deterministic-template confidence, never implied to be model confidence
+- [ ] Analyst and Overview label each block via `SourceTag`
+- [ ] Engine remains the sole numeric authority — no AI value reaches a financial figure
 
-- [ ] **Phase 4 — Wire Qwen + EnterPro mock**
-  - [ ] `supabase_enable` then `enable_ai_capability`; load `enter_llm_integration` skill; follow its model-selection workflow; store `QWEN_API_KEY`/`QWEN_BASE_URL`/`QWEN_MODEL` via `supabase_add_secret` (Qwen is external — function calls its OpenAI-compatible endpoint).
-  - [ ] Backend function `qwen-ask` (modes, Zod validation, structured response); `src/services/qwen.ts` wrapper + deterministic fallback; Demo Intelligence Mode indicator reflects live vs fallback.
-  - [ ] `src/services/enterpro.ts` stateful mock persisted via `data.ts` (workflows + audit rows); UI shows AI-flagged risk/leak → concrete workflow with persisted status.
-  - [ ] Optional: auth/roles only if core loop is already fully solid — otherwise skip.
+### Phase 4 — persistence consistency & invariants
+- [ ] New owned `finsight_analyst_answers` table with RLS; Analyst history survives reload
+- [ ] `docs/PERSISTENCE.md` states what is durable, session-only, static seed, mutable state
+- [ ] Seed calibration regression test pins measured cash, breach day, day-90, health, leakage, exposure, at-risk
+- [ ] At-risk capital: pin the **measured** value; report the 28.4L/28.6L doc discrepancy without changing the math
 
-- [ ] **Phase 5 — Polish + demo trigger + delivery**
-  - [ ] Design self-audit vs spec §8 checklist; fix repetitive cards, over-rounded corners, unnecessary gradients, weak hierarchy, decorative elements.
-  - [ ] **"Demo Scenario" trigger**: guided walkthrough of §11.7 sequence (Overview → Liquidity risk → Trace Cause → evidence → AI Analyst → Simulator revenue −15% → optimal intervention → EnterPro workflow → Money Leaks → recover one item → Audit Trail), works with no external service, step list + auto-navigation.
-  - [ ] Subtle load animations on figures, causal-graph node highlight, evidence drawers.
-  - [ ] Final green: `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm run build`.
-  - [ ] Deliver short honest limitations list.
+### Phase 5 — performance
+- [ ] `commit` no longer reads full state twice per mutation
+- [ ] `seedIfEmpty` runs once per session, not per call
+- [ ] Route-level `React.lazy` + `Suspense`; confirm chunk split in build output
+- [ ] Skeleton loading states on major pages
+- [ ] **Profile Simulator slider cost first**; optimize only if measurement justifies it
+
+### Phase 6 — consistency, analytics, i18n
+- [ ] One authoritative current user; remove the hardcoded "Nischala GS" / "A. Mehta" split
+- [ ] EnterPro clearly labeled as simulated
+- [ ] No control implies a permission the database does not enforce
+- [ ] Register and instrument real analytics events
+- [ ] Translate FinSight UI (en + zh-CN) via the `enter_i18n` skill; run its scan script as the final shell command
+- [ ] Remove `framer-motion` only; keep `next-themes`, `react-hook-form`, `zod`, i18n
+
+### Phase 7 — tests
+- [ ] Reset behavior tests in the persistence layer
+- [ ] Adapter-equivalence tests proving memory and cloud produce the same domain outcome
+- [ ] Qwen tests: success, timeout, API failure, malformed, empty, fallback, mode labeling, off-pattern questions
+- [ ] Zod boundary tests for malformed database rows
+- [ ] Workflow lifecycle, leak recovery, Audit Trail, Simulator, DemoWalkthrough, route smoke tests
+- [ ] Playwright E2E (1.62 + browsers confirmed available): Overview → Risk Radar → trace → workflow → advance/approve/execute → Audit Trail; plus leak recovery, simulator, analyst
 
 ## Verification checklist
 
-- [ ] **Positive**: demo walkthrough runs start-to-finish with no external service; approving a workflow shows status Approved, approver, audit event, immediate UI update — and persists across refresh; simulator outputs change deterministically with sliders; AI Analyst answers cite real IDs; seeded data appears identical on a second load (idempotent seed).
-- [ ] **Negative/default**: Qwen unreachable → full app functionality in fallback mode with "Demo Intelligence Mode" indicator; DB fetch failure → error state with retry; empty filters show empty states; search finds seeded transactions.
-- [ ] **Boundary**: forecast breaches ₹1.25 Cr at ~52 days in Base case; leakage ≈ ₹38.4L; health = 78/100; INR formatting (₹, lakhs/crores) consistent.
-- [ ] **Build scope**: `pnpm lint` + `pnpm exec tsc --noEmit` + `pnpm test` (Vitest + Testing Library) + `pnpm run build` all pass after each phase.
-- [ ] **Responsive**: desktop-first; verify overview at desktop_1280 and tablet_768 (mobile explicitly out of scope).
+- [ ] `pnpm test` passes; report exact counts before/after
+- [ ] `pnpm lint` passes with no new warnings
+- [ ] `pnpm exec tsc --noEmit` passes under strict
+- [ ] `pnpm run build` passes; `pnpm run build:prod` verified as the minified production path, `build` left untouched
+- [ ] Playwright E2E run and its real result reported
+- [ ] **Positive:** approving a workflow updates status, records approver, writes an audit event, persists across reload
+- [ ] **Negative:** an illegal transition (e.g. `Detected → Executed`) is rejected by the database trigger, not just the UI
+- [ ] **Negative:** a direct PostgREST write attempting to set another user's `user_id` is rejected
+- [ ] **Boundary:** Reset removes only the caller's rows; `supabase_read_query` confirms legacy 7 / 236 / 6 still intact afterwards
+- [ ] **Boundary:** malformed JSONB row is skipped and reported, and does not crash hydration
+- [ ] **Boundary:** Qwen timeout falls back with correct `fallback` labeling and no fabricated confidence
 
-## Files to create / modify
+## Explicitly out of scope
 
-- **Modify**: `src/router.tsx`, `src/pages/Index.tsx` (→ AppShell+Overview), `src/index.css`, `tailwind.config.ts`, `package.json` (test script + deps).
-- **Create**: `src/domain/{types,format,engine}.ts` + canonical seed, `src/services/{data,qwen,enterpro}.ts`, `src/hooks/useFinSight.ts`, `src/components/**` (AppShell, Sidebar, Header, MetricCard, HealthGauge, RiskCard, CausalGraph, TraceCauseDrawer, ExplainabilityDrawer, ForecastChart, ScenarioControls, WorkflowTimeline, AuditTable, EvidenceDrawer, DemoWalkthrough, …), `src/pages/{Overview,RiskRadar,MoneyLeaks,CashForecast,Simulator,Transactions,Vendors,Workflows,Analyst,AuditTrail}.tsx`, `vitest.config.ts`, tests under `src/domain/__tests__/` and `src/pages/__tests__/` (approve-workflow chain, trace cause, run simulation).
-- **Enter Cloud**: Postgres tables + RLS; backend functions `finsight-seed` and `qwen-ask`; secrets.
+- No change to `domain/engine.ts` financial math unless a test demonstrates a real bug (per instruction 36)
+- No replacement of the deterministic engine with AI (37)
+- No redesign into a generic SaaS dashboard (38)
 
-## What I need from you
+## Honest limitations to report at the end
 
-- [ ] Qwen: `QWEN_API_KEY`, `QWEN_BASE_URL`, `QWEN_MODEL` (supply via the secret prompt in Phase 4; fallback mode works without them).
-- [ ] Confirmation EnterPro stays a stateful mock (no real credentials) — assumed yes per the prompt; flag if that changes.
-- [ ] Nothing else blocking. I'll flag anything about Enter Cloud's function-invocation or schema setup I'm unsure how to do before guessing.
+Production readiness will be claimed **only** for what is actually verified. Anonymous identities are real auth principals but are not identity-proofed; the display name on an audit event remains client-supplied even though the owning `user_id` is database-stamped. Optional email sign-in is layered on top but full multi-user organization/role management is not part of this pass.
